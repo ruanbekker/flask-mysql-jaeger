@@ -51,6 +51,9 @@ services:
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=password
+    volumes:
+      - ./grafana/data:/var/lib/grafana
+      - ./grafana/configs/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
     networks:
       - contained
     labels:
