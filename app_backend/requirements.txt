@@ -1,0 +1,9 @@
+Flask
+Flask-SQLAlchemy
+flask-marshmallow
+marshmallow-sqlalchemy
+pymysql
+requests
+Flask-OpenTracing
+jaeger-client
+opentracing
