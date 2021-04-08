@@ -1,0 +1,6 @@
+Flask
+requests
+Flask
+Flask-OpenTracing
+jaeger-client
+opentracing
