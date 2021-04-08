@@ -1,0 +1,126 @@
+version: "3.9"
+
+services:
+  traefik:
+    image: traefik:v2.4.5
+    container_name: traefik
+    command: [ '--providers.docker', '--api.insecure' ]
+    networks:
+      - contained
+    ports:
+      - 80:80
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    labels:
+      - "traefik.http.routers.traefik.rule=Host(`traefik.localdns.xyz`)"
+      - "traefik.http.services.traefik.loadbalancer.server.port=8080"
+
+  loki:
+    image: grafana/loki:2.2.0
+    container_name: loki
+    networks:
+      - contained
+    ports:
+      - 3100:3100
+    labels:
+      - "traefik.http.routers.loki.rule=Host(`loki.localdns.xyz`)"
+      - "traefik.http.services.loki.loadbalancer.server.port=3100"
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaeger
+    environment:
+      - COLLECTOR_ZIPKIN_HTTP_PORT=9411
+    ports:
+      - 5775:5775/udp
+      - 6831:6831/udp
+      - 6832:6832/udp
+      - 5778:5778
+      - 16686:16686
+      - 14268:14268
+      - 9411:9411
+    networks:
+      - contained
+    labels:
+      - "traefik.http.routers.jaeger.rule=Host(`jaeger.localdns.xyz`)"
+      - "traefik.http.services.jaeger.loadbalancer.server.port=16686"
+
+  grafana:
+    image: grafana/grafana:7.5.2
+    container_name: grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=password
+    networks:
+      - contained
+    labels:
+      - "traefik.http.routers.grafana.rule=Host(`grafana.localdns.xyz`)"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+
+  app-frontend:
+    build:
+      context: app_frontend
+    container_name: app-frontend
+    restart: unless-stopped
+    environment:
+      - APP_BACKEND_URL=http://app-backend:5000/api/v1/list
+    networks:
+      - contained
+    depends_on:
+      - app-backend
+      - app-database
+      - traefik
+    labels:
+      - "traefik.http.routers.app-frontend.rule=Host(`app.localdns.xyz`)"
+      - "traefik.http.services.app-frontend.loadbalancer.server.port=5000"
+    logging:
+      driver: loki
+      options:
+        loki-url: http://localhost:3100/loki/api/v1/push
+        loki-external-labels: job=dockerlogs,appname=app-frontend
+
+  app-backend:
+    build:
+      context: app_backend
+    container_name: app-backend
+    restart: unless-stopped
+    environment:
+      - MYSQL_HOST=app-database
+      - MYSQL_USER=app
+      - MYSQL_PASSWORD=password
+      - MYSQL_DATABASE=appdb
+    networks:
+      - contained
+    depends_on:
+      - app-database
+      - traefik
+    labels:
+      - "traefik.http.routers.app-backend.rule=Host(`api.localdns.xyz`)"
+      - "traefik.http.services.app-backend.loadbalancer.server.port=5000"
+    logging:
+      driver: loki
+      options:
+        loki-url: http://localhost:3100/loki/api/v1/push
+        loki-external-labels: job=dockerlogs,appname=app-backend
+
+  app-database:
+    image: mysql:8.0
+    container_name: app-database
+    command: --default-authentication-plugin=mysql_native_password --init-file=/data/application/init.sql
+    restart: unless-stopped
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      - MYSQL_ROOT_PASSWORD=password
+      - MYSQL_USER=app
+      - MYSQL_PASSWORD=password
+      - MYSQL_DATABASE=appdb
+    volumes:
+      #- ./mysqldata:/var/lib/mysql
+      - ./init.sql:/data/application/init.sql
+    networks:
+      - contained
+
+networks:
+  contained:
+    name: contained
